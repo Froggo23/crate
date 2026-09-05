@@ -192,10 +192,16 @@ async function main() {
       `(have ${startCount + analyzed}/${TARGET}, ${((Date.now() - t0) / 60000).toFixed(1)} min elapsed)`,
     );
 
-    await pool(cands, CONCURRENCY, (c) => processTrack(c));
-
-    const n = await embedPending();
-    if (n) console.log(`  embedded ${n} cards`);
+    // Process in chunks and embed after each one. A whole round can be 500+
+    // candidates, and embedding only at the end leaves everything analysed in
+    // that round unsearchable for ~25 minutes -- `crate_search` requires
+    // `embedded`, so the live corpus visibly lags the ingested one.
+    const CHUNK = 60;
+    for (let i = 0; i < cands.length; i += CHUNK) {
+      await pool(cands.slice(i, i + CHUNK), CONCURRENCY, (c) => processTrack(c));
+      const n = await embedPending();
+      if (n) console.log(`  embedded ${n} cards  (${startCount + analyzed}/${TARGET})`);
+    }
 
     cursor = page.cursor;
     await setState(CURSOR_KEY, { cursor, updatedAt: new Date().toISOString() });
