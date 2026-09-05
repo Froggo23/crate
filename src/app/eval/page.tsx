@@ -240,7 +240,7 @@ export default function EvalPage() {
               <p className="text-[10px] uppercase tracking-wider text-mute">Krumhansl–Schmuckler</p>
               <p className="text-dim">tonic accuracy <span className="num">{pctS(report.overall.baseline.tonicAccuracy)}</span></p>
               <p className="text-dim">mode accuracy <span className="num">{pctS(report.overall.baseline.modeAccuracy)}</span></p>
-              <p className="text-mute">landed on a related key instead: <span className="num">{report.relativeCollapse.n}/{report.relativeCollapse.of}</span></p>
+              <p className="text-mute">collapsed onto the parent major / its relative minor: <span className="num">{report.relativeCollapse.n}/{report.relativeCollapse.of}</span></p>
             </div>
           </div>
           <ul className="mt-3 space-y-1 text-[11px] text-mute leading-relaxed list-disc pl-4">

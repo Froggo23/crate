@@ -13,6 +13,7 @@
  */
 
 import { db } from './db';
+import { MODE_TEMPLATES } from './dsp/modes';
 
 export interface PerModeRow {
   mode: string;
@@ -58,22 +59,24 @@ export async function buildEvalReport(): Promise<EvalReport> {
   const perMode: PerModeRow[] = modes.map((m) => {
     let ctp = 0, cfp = 0, cfn = 0, btp = 0, bfp = 0, bfn = 0, support = 0;
     for (const r of rows) {
-      const truth = r.labeled_mode === m && r.labeled_tonic === r.labeled_tonic;
+      // A prediction only counts as correct if BOTH the tonic and the mode match.
+      // Scoring the mode alone would credit "Dorian" on the wrong root, which is
+      // exactly the error the project claims to fix.
       const truthIsM = r.labeled_mode === m;
       if (truthIsM) support++;
 
-      const cPred = r.mode === m && r.tonic === r.labeled_tonic;
       const cPredIsM = r.mode === m;
-      if (cPredIsM && truthIsM && r.tonic === r.labeled_tonic) ctp++;
+      const cCorrect = cPredIsM && truthIsM && r.tonic === r.labeled_tonic;
+      if (cCorrect) ctp++;
       else if (cPredIsM) cfp++;
-      if (truthIsM && !(cPredIsM && r.tonic === r.labeled_tonic)) cfn++;
-      void truth; void cPred;
+      if (truthIsM && !cCorrect) cfn++;
 
       const bMode = r.baseline_mode === 'major' ? 'ionian' : 'aeolian';
       const bPredIsM = bMode === m;
-      if (bPredIsM && truthIsM && r.baseline_key === r.labeled_tonic) btp++;
+      const bCorrect = bPredIsM && truthIsM && r.baseline_key === r.labeled_tonic;
+      if (bCorrect) btp++;
       else if (bPredIsM) bfp++;
-      if (truthIsM && !(bPredIsM && r.baseline_key === r.labeled_tonic)) bfn++;
+      if (truthIsM && !bCorrect) bfn++;
     }
     return {
       mode: m,
@@ -96,10 +99,21 @@ export async function buildEvalReport(): Promise<EvalReport> {
     if (r.baseline_key === r.labeled_tonic) bTonic++;
     const bAsMode = r.baseline_mode === 'major' ? 'ionian' : 'aeolian';
     if (r.baseline_key === r.labeled_tonic && bAsMode === r.labeled_mode) bMode++;
-    // did the baseline land on the parent major / relative minor instead?
+    // Did the baseline land specifically on the PARENT MAJOR of the true mode,
+    // or on that parent's relative minor?
+    //
+    // This is the precise claim being tested, so it is measured precisely. An
+    // earlier version counted almost any interval as a "collapse", which made
+    // the statistic indistinguishable from "wrong tonic" and therefore useless
+    // as evidence. E Phrygian has parentOffset 4, so its parent major is C and
+    // the collapse targets are exactly C major and A minor.
     if (r.baseline_key !== r.labeled_tonic) {
-      const d = ((r.baseline_key - r.labeled_tonic) % 12 + 12) % 12;
-      if (d === 3 || d === 9 || d === 4 || d === 8 || d === 5 || d === 7 || d === 2 || d === 10) relative++;
+      const tpl = MODE_TEMPLATES.find((t) => t.name === r.labeled_mode);
+      if (tpl?.parentOffset != null) {
+        const parentRoot = ((r.labeled_tonic - tpl.parentOffset) % 12 + 12) % 12;
+        const relMinor = (parentRoot + 9) % 12;
+        if (r.baseline_key === parentRoot || r.baseline_key === relMinor) relative++;
+      }
     }
   }
 
