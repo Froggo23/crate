@@ -1,26 +1,102 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   CRATE — a deliberately single-theme dark interface.
+   The product is a studio tool: engineers read spectrograms on dark screens,
+   and the mode/confidence colour coding needs a stable ground to sit on.
+--------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg:        #0b0b0d;
+  --bg-2:      #121216;
+  --surface:   #17171c;
+  --surface-2: #1e1e25;
+  --line:      #2a2a33;
+  --line-2:    #3a3a46;
+  --text:      #e9e9ee;
+  --text-dim:  #a0a0ae;
+  --text-mute: #6e6e7e;
+  --accent:    #e0a44a;
+  --accent-2:  #f5c877;
+  --cyan:      #57c8d6;
+  --violet:    #9b8cf0;
+  --green:     #6fcf8b;
+  --red:       #e2685f;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--text);
+  --color-dim: var(--text-dim);
+  --color-mute: var(--text-mute);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-cyan: var(--cyan);
+  --color-violet: var(--violet);
+  --color-good: var(--green);
+  --color-bad: var(--red);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+html { color-scheme: dark; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
+
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* scrollbars that don't fight the theme */
+* { scrollbar-color: var(--line-2) transparent; scrollbar-width: thin; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 6px; border: 3px solid var(--bg); }
+::-webkit-scrollbar-track { background: transparent; }
+
+@utility card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+@utility chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* focus ring that stays legible on dark */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@keyframes crate-pulse { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+.pulse { animation: crate-pulse 1.4s ease-in-out infinite; }
+
+@keyframes crate-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+.fade-in { animation: crate-in .28s ease-out both; }
+
+/* wide content must scroll inside its own box, never the page */
+.scroll-x { overflow-x: auto; }

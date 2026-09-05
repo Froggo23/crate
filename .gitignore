@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# crate
+.env.local
+.logs/
+/data/*.tmp
+
+# keep the template, never the real values
+!.env.example

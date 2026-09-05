@@ -1,0 +1,53 @@
+{
+  "generatedBy": "scripts/test-dsp.ts",
+  "cases": [
+    {
+      "tonic": "E",
+      "mode": "phrygian"
+    },
+    {
+      "tonic": "D",
+      "mode": "dorian"
+    },
+    {
+      "tonic": "G",
+      "mode": "mixolydian"
+    },
+    {
+      "tonic": "F",
+      "mode": "lydian"
+    },
+    {
+      "tonic": "A",
+      "mode": "aeolian"
+    },
+    {
+      "tonic": "C",
+      "mode": "ionian"
+    },
+    {
+      "tonic": "B",
+      "mode": "phrygian"
+    },
+    {
+      "tonic": "F#",
+      "mode": "dorian"
+    }
+  ],
+  "clear": {
+    "ourTonic": 8,
+    "ourMode": 8,
+    "baseTonic": 8,
+    "baseMode": 2,
+    "n": 8
+  },
+  "ambiguous": {
+    "ourTonic": 8,
+    "ourMode": 6,
+    "baseTonic": 5,
+    "baseMode": 2,
+    "n": 8
+  },
+  "passed": 14,
+  "failed": 0
+}

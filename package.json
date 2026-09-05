@@ -6,21 +6,33 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ingest": "tsx scripts/ingest.ts",
+    "enrich": "tsx scripts/enrich.ts",
+    "reclassify": "tsx scripts/reclassify.ts",
+    "test:dsp": "tsx scripts/test-dsp.ts",
+    "test:parser": "tsx scripts/test-parser.ts",
+    "bench": "tsx scripts/test-dsp.ts --json",
+    "db:push": "supabase db push"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "next": "16.3.4",
+    "postgres": "^3.4.9",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^20.19.43",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }
