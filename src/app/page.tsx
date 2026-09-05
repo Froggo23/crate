@@ -197,7 +197,8 @@ export default function SearchPage() {
         <div className="mt-4 flex flex-wrap gap-1.5">
           {EXAMPLES.map((ex) => (
             <button key={ex} onClick={() => { setQ(ex); void run(ex); }}
-                    className="chip hover:border-accent hover:text-accent transition-colors text-left"
+                    className="chip hover:border-accent hover:text-accent transition-colors text-left
+                               !whitespace-normal !overflow-visible max-w-full"
                     style={{ color: 'var(--text-dim)' }}>
               {ex}
             </button>

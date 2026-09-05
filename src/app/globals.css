@@ -50,6 +50,10 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* Wide content scrolls inside its own .scroll-x box; the page itself never
+     scrolls sideways. Without this a single long chip drags the whole layout
+     off-screen on a phone. */
+  overflow-x: clip;
 }
 
 ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
@@ -78,6 +82,9 @@ body {
   font-size: 0.7rem;
   letter-spacing: 0.01em;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @utility num {
