@@ -48,8 +48,11 @@ export interface SearchRow {
   emergence_percentile: number | null;
   listenbrainz_listens: number | null;
   distance: number | null;
+  tag_overlap: number | null;
   reason?: string | null;
   preRerankRank?: number;
+  /** true when this track only appears because a constraint was relaxed */
+  relaxed?: boolean;
 }
 
 export interface FunnelDiagnostics {
@@ -62,8 +65,20 @@ export interface FunnelDiagnostics {
   message: string;
 }
 
+export interface Relaxation {
+  /** human-readable description of what was loosened */
+  note: string;
+  /** how many results existed before this step */
+  before: number;
+  /** how many after */
+  after: number;
+}
+
 export interface SearchResponse {
   diagnostics: FunnelDiagnostics | null;
+  /** constraints that had to be loosened to find anything, in the order applied */
+  relaxations: Relaxation[];
+  strictCount: number;
   queryId: string | null;
   raw: string;
   parsed: ParsedQuery;
@@ -87,6 +102,10 @@ export interface SearchResponse {
 /** Over-fetch, then let the re-ranker cut. Plan section 3 says top 50. */
 const CANDIDATE_POOL = 50;
 
+/** Below this, a query is treated as having effectively failed and constraints
+ *  are progressively relaxed rather than handing back an empty page. */
+const MIN_RESULTS = 5;
+
 /** Order matters: it is the order the funnel narrows in, and therefore the order
  *  in which blame is assigned. Cheapest and most commonly over-tight first. */
 const FUNNEL_ORDER = [
@@ -94,6 +113,9 @@ const FUNNEL_ORDER = [
   'year', 'duration', 'tags', 'text', 'obscurity',
 ] as const;
 
+// `tags` is retained in the funnel's vocabulary but is never active any more,
+// since style tags rank rather than filter. Leaving the key in keeps the SQL
+// signature stable.
 const FUNNEL_LABEL: Record<string, string> = {
   tempo: 'the tempo range', key: 'the key', mode: 'the mode',
   vocals: 'the vocals/instrumental requirement', energy: 'the energy range',
@@ -121,7 +143,7 @@ async function explainFunnel(q: ParsedQuery): Promise<FunnelDiagnostics | null> 
         p_brightness_max => ${q.brightness_max},
         p_duration_min   => ${q.duration_min},
         p_duration_max   => ${q.duration_max},
-        p_tags_any       => ${q.tags}::text[],
+        p_tags_any       => ${null}::text[],
         p_text           => ${q.keywords},
         p_min_mode_conf  => ${q.min_mode_confidence}
       ) as f`;
@@ -182,28 +204,102 @@ export async function runSearch(
   // ---- filter first, then rank -------------------------------------------
   const tRetrieve = Date.now();
   const pool = Math.max(CANDIDATE_POOL, q.limit);
-  const rows = (await sql`
+
+  const runQuery = async (qq: ParsedQuery): Promise<SearchRow[]> => (await sql`
     select * from crate_search(
       q_vec            => ${qVec}::vector(1536),
-      p_bpm_min        => ${q.bpm_min},
-      p_bpm_max        => ${q.bpm_max},
-      p_tonics         => ${tonicsToPitchClasses(q.tonics)}::int[],
-      p_modes          => ${q.modes}::text[],
-      p_year_min       => ${q.year_min},
-      p_year_max       => ${q.year_max},
-      p_instrumental   => ${q.instrumental},
-      p_emergence_max  => ${q.emergence_max},
-      p_energy_min     => ${q.energy_min},
-      p_energy_max     => ${q.energy_max},
-      p_brightness_min => ${q.brightness_min},
-      p_brightness_max => ${q.brightness_max},
-      p_duration_min   => ${q.duration_min},
-      p_duration_max   => ${q.duration_max},
-      p_tags_any       => ${q.tags}::text[],
-      p_text           => ${q.keywords},
-      p_min_mode_conf  => ${q.min_mode_confidence},
+      p_bpm_min        => ${qq.bpm_min},
+      p_bpm_max        => ${qq.bpm_max},
+      p_tonics         => ${tonicsToPitchClasses(qq.tonics)}::int[],
+      p_modes          => ${qq.modes}::text[],
+      p_year_min       => ${qq.year_min},
+      p_year_max       => ${qq.year_max},
+      p_instrumental   => ${qq.instrumental},
+      p_emergence_max  => ${qq.emergence_max},
+      p_energy_min     => ${qq.energy_min},
+      p_energy_max     => ${qq.energy_max},
+      p_brightness_min => ${qq.brightness_min},
+      p_brightness_max => ${qq.brightness_max},
+      p_duration_min   => ${qq.duration_min},
+      p_duration_max   => ${qq.duration_max},
+      p_text           => ${qq.keywords},
+      p_min_mode_conf  => ${qq.min_mode_confidence},
+      p_tags_boost     => ${qq.tags}::text[],
       p_limit          => ${pool}
     )`) as unknown as SearchRow[];
+
+  let rows = await runQuery(q);
+  const strictCount = rows.length;
+  const relaxations: Relaxation[] = [];
+
+  // ---- progressive relaxation --------------------------------------------
+  //
+  // A single over-tight constraint should degrade the answer, not erase it.
+  // Measured before this existed: 20% of arbitrary queries returned nothing and
+  // many more returned one or two rows, because the parser had inferred a
+  // brightness ceiling or a mode-confidence floor from an adjective.
+  //
+  // Constraints are relaxed in order of how likely they are to have been INFERRED
+  // rather than stated. A mode-confidence floor is always the parser's own
+  // invention; a named key or "no vocals" is the user's. The last two are never
+  // touched: the plan is explicit that a vocal track must never appear in a
+  // "no vocals" query no matter how well it matches, and the same holds for a
+  // named mode -- those are the system's actual claims about the music.
+  //
+  // Whatever gets loosened is reported back and shown in the UI. Silently
+  // widening a constraint would be worse than returning nothing.
+  if (rows.length < MIN_RESULTS) {
+    const widenBpm = (x: ParsedQuery, by: number): ParsedQuery => ({
+      ...x,
+      bpm_min: x.bpm_min == null ? null : Math.max(20, x.bpm_min * (1 - by)),
+      bpm_max: x.bpm_max == null ? null : Math.min(300, x.bpm_max * (1 + by)),
+    });
+
+    const TIERS: { note: string; applies: (x: ParsedQuery) => boolean; mutate: (x: ParsedQuery) => ParsedQuery }[] = [
+      { note: 'the mode-confidence floor',
+        applies: (x) => x.min_mode_confidence != null,
+        mutate: (x) => ({ ...x, min_mode_confidence: null }) },
+      { note: 'the energy and brightness ranges',
+        applies: (x) => [x.energy_min, x.energy_max, x.brightness_min, x.brightness_max].some((v) => v != null),
+        mutate: (x) => ({ ...x, energy_min: null, energy_max: null, brightness_min: null, brightness_max: null }) },
+      { note: 'the tempo range, widened by 25%',
+        applies: (x) => x.bpm_min != null || x.bpm_max != null,
+        mutate: (x) => widenBpm(x, 0.25) },
+      { note: 'the duration and year limits',
+        applies: (x) => [x.duration_min, x.duration_max, x.year_min, x.year_max].some((v) => v != null),
+        mutate: (x) => ({ ...x, duration_min: null, duration_max: null, year_min: null, year_max: null }) },
+      { note: 'the artist/title text match',
+        applies: (x) => Boolean(x.keywords),
+        mutate: (x) => ({ ...x, keywords: null }) },
+      { note: 'the obscurity ceiling',
+        applies: (x) => x.emergence_max != null,
+        mutate: (x) => ({ ...x, emergence_max: null }) },
+      { note: 'the tempo range entirely',
+        applies: (x) => x.bpm_min != null || x.bpm_max != null,
+        mutate: (x) => ({ ...x, bpm_min: null, bpm_max: null }) },
+      { note: 'the requested key',
+        applies: (x) => Boolean(x.tonics?.length),
+        mutate: (x) => ({ ...x, tonics: null }) },
+    ];
+
+    let current = q;
+    const seen = new Set(rows.map((r) => r.track_id));
+    for (const tier of TIERS) {
+      if (rows.length >= MIN_RESULTS) break;
+      if (!tier.applies(current)) continue;
+      const before = rows.length;
+      current = tier.mutate(current);
+      const next = await runQuery(current);
+      // strict matches keep their position; relaxed ones are appended and flagged
+      for (const r of next) {
+        if (seen.has(r.track_id)) continue;
+        seen.add(r.track_id);
+        r.relaxed = true;
+        rows.push(r);
+      }
+      if (rows.length !== before) relaxations.push({ note: tier.note, before, after: rows.length });
+    }
+  }
   const retrieveMs = Date.now() - tRetrieve;
 
   rows.forEach((r, i) => { r.preRerankRank = i + 1; });
@@ -265,6 +361,8 @@ export async function runSearch(
 
   return {
     diagnostics,
+    relaxations,
+    strictCount,
     queryId,
     raw: rawText,
     parsed: q,

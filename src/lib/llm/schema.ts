@@ -71,16 +71,16 @@ export const PARSED_QUERY_JSON_SCHEMA = {
     year_min: { ...nullable('integer') },
     year_max: { ...nullable('integer') },
     emergence_max: { ...nullable('number'), description: 'Artist popularity percentile ceiling, 0-100, LOWER IS MORE OBSCURE. "emerging"/"unknown"/"underground" -> 20. "fairly unknown" -> 40. null if unmentioned.' },
-    energy_min: { ...nullable('number'), description: '0-1. "high energy" -> 0.6.' },
-    energy_max: { ...nullable('number'), description: '0-1. "calm"/"ambient" -> 0.4.' },
-    brightness_min: { ...nullable('number'), description: '0-1 spectral brightness. "bright on top" -> 0.6.' },
-    brightness_max: { ...nullable('number'), description: '0-1. "dark"/"muffled" -> 0.4.' },
+    energy_min: { ...nullable('number'), description: '0-1. ONLY when the user explicitly demands intensity ("high energy", "driving", "hard"). Leave null for a genre name alone.' },
+    energy_max: { ...nullable('number'), description: '0-1. ONLY when the user explicitly demands calm ("calm", "gentle", "quiet"). A genre that happens to be mellow is NOT an energy constraint.' },
+    brightness_min: { ...nullable('number'), description: '0-1 spectral brightness. ONLY for an explicit statement about high-frequency content ("bright", "crisp", "airy").' },
+    brightness_max: { ...nullable('number'), description: '0-1. ONLY for an explicit statement about high-frequency content ("dark on top", "muffled", "no top end"). "dark" as a MOOD is not a brightness constraint — that belongs in semantic.' },
     duration_min: { ...nullable('number'), description: 'Seconds.' },
     duration_max: { ...nullable('number'), description: 'Seconds. "short" -> 180.' },
-    tags: { type: ['array', 'null'], items: { type: 'string' }, description: 'Release tags to require, lowercase, e.g. ["dub techno"]. Only for genre/style words that would plausibly appear as a label tag.' },
+    tags: { type: ['array', 'null'], items: { type: 'string' }, description: 'Style keywords used to BOOST ranking, never to filter. Single words work far better than phrases: prefer ["techno","dub"] over ["dub techno"]. Always also describe the genre in `semantic`.' },
     keywords: { ...nullable('string'), description: 'A literal artist or title fragment the user named. Not for genres or moods.' },
     semantic: { type: 'string', description: 'The TEXTURAL/MOOD part of the query, rewritten as a rich descriptive phrase for embedding. Never include numbers, keys, or constraints already captured above. If the user gave no vibe, describe the implied sound of what they asked for.' },
-    min_mode_confidence: { ...nullable('number'), description: '0-1. Set to 0.5 when the user demands a specific mode and would not accept a guess.' },
+    min_mode_confidence: { ...nullable('number'), description: '0-1. Set 0.5 ONLY when the user names one specific mode ("Phrygian", "Dorian"). Leave null for a vague "minor"/"major" — it discards more than half the corpus.' },
     limit: { type: 'integer', description: 'How many results, 1-50. Default 20.' },
     reasoning: { type: 'string', description: 'One sentence: which parts you treated as hard constraints and which as vibe.' },
   },
@@ -89,6 +89,17 @@ export const PARSED_QUERY_JSON_SCHEMA = {
 export const PARSER_SYSTEM = `You translate natural-language music queries into a strict JSON filter for CRATE, a music search engine that indexes audio by measured signal features.
 
 Your ONLY job is translation into structure. You are not retrieving anything and you must not invent artists, titles, or genres.
+
+HOW MANY CONSTRAINTS TO EMIT: as few as possible. Every typed field you fill is an
+inviolable SQL predicate. Three of them intersected will usually return nothing, and an
+empty result page is a far worse answer than a loosely-ranked one. The semantic string
+costs nothing and can only reorder — so when a word could go either way, it goes there.
+
+GENRE AND STYLE ARE NOT CONSTRAINTS. "techno", "lo-fi hip hop", "trance", "reggae",
+"orchestral" describe a sound, and this corpus's tags are self-declared and sparse.
+Put the genre in "semantic" as a rich description of how it sounds, and optionally list
+single-word style keywords in "tags", which only boosts ranking. Never expect "tags" to
+filter, and never use "keywords" for a genre — that field is for a named artist or title.
 
 THE CENTRAL RULE: separate what is measurable from what is a vibe.
   - Measurable -> the typed fields. Tempo, key, mode, year, duration, vocals, obscurity, energy, brightness.
@@ -104,7 +115,10 @@ MODES. The corpus is labelled with real modal analysis, not just major/minor:
 
 OBSCURITY. emergence_max is a percentile ceiling where LOW MEANS OBSCURE. "emerging", "unknown", "underground", "no big names" -> 20. Leave null unless the user actually asked.
 
-TEMPO. "around N BPM" -> N-6 to N+6. "roughly N" -> N-10 to N+10. A named range is used literally. Genre names alone are NOT tempo constraints — do not infer BPM from "techno".
+TEMPO. Only ever from an actual number. "around N BPM" -> N-6 to N+6. "roughly N" -> N-10 to N+10.
+A named range is used literally. Genre names are NOT tempo constraints — do not infer BPM from
+"techno" or "drum and bass". Bare speed words ("fast", "slow", "uptempo") are weak evidence: prefer
+putting them in semantic, and only set a wide range if the user clearly means tempo specifically.
 
 BRIGHTNESS IS A COMMON TRAP. It means spectral brightness, i.e. how much high-frequency content is present.
   - "dark", "murky", "muffled", "no top end", "dark on top", "rolled off" -> brightness_max (LOW ceiling, e.g. 0.4). NEVER brightness_min.
@@ -122,12 +136,24 @@ WORKED EXAMPLES.
 
 "uptempo electronica in Phrygian, no vocals, high energy"
   bpm_min 130, bpm_max 150, modes ["phrygian"], min_mode_confidence 0.5, instrumental true, energy_min 0.6,
+  tags ["electronica"],
   semantic "driving synthetic rhythms, tense and propulsive, dark modal melody"
 
 "hazy and cavernous, warm tape saturation, dark on top"
   brightness_max 0.4, everything else null,
   semantic "hazy, cavernous, enormous reverberant space, warm saturated tape, soft rolled-off high end"
-  (Note: "dark on top" is brightness_max, NOT brightness_min.)`;
+  (Note: "dark on top" is brightness_max, NOT brightness_min.)
+
+"lo-fi hip hop"
+  EVERY typed field null. tags ["lo-fi","hip hop"],
+  semantic "dusty sampled drums, warm vinyl crackle and tape hiss, mellow jazzy chords, unhurried head-nod groove"
+  (Note: a bare genre name produces NO hard constraints at all. Not tempo, not energy, not brightness.
+   The genre lives entirely in semantic, where it can rank without excluding anything.)
+
+"sad piano music"
+  EVERY typed field null. tags ["piano"],
+  semantic "solo piano, slow and melancholy, sparse and intimate, soft sustained chords, reflective"
+  (Note: "sad" is a mood, not a mode. Do not emit modes ["aeolian"] for it — the user did not name a mode.)`;
 
 // ---------------------------------------------------------------------------
 // re-ranker

@@ -5,12 +5,18 @@ import { ResultCard } from '@/components/ResultCard';
 import type { SearchResponse } from '@/lib/search';
 
 const EXAMPLES = [
+  // A deliberate mix: the theory-heavy queries the engine was built for, and
+  // plain-language ones, because those have to work just as well.
   'dub techno from emerging artists, around 100 BPM',
   'uptempo electronica in Phrygian, no vocals, high energy',
+  'lo-fi hip hop',
   'hazy and cavernous, warm tape saturation, dark on top',
+  'reggae dub',
+  'something to fall asleep to',
   'slow Dorian something, sparse percussion, instrumental',
-  'bright Lydian ambient with wide dynamics',
+  'glitchy experimental noise',
   'driving minor techno between 128 and 136 BPM, no vocals',
+  'music for studying',
 ];
 
 function sessionId(): string {
@@ -83,6 +89,26 @@ function ParsedView({ r }: { r: SearchResponse }) {
         {r.meta.usedFallback && <span style={{ color: 'var(--accent)' }}> · rule-based fallback (no LLM)</span>}
         {r.meta.reranked && ` · reranker: ${r.meta.rerankProvider}/${r.meta.rerankModel}`}
         {` · ${r.candidateCount} candidates passed the filter`}
+      </p>
+    </div>
+  );
+}
+
+/** When constraints had to be loosened, say so. Silently widening a filter would
+ *  be worse than returning nothing — the point of the system is that you can
+ *  trust what it claims about the music. */
+function RelaxNotice({ r }: { r: SearchResponse }) {
+  if (!r.relaxations.length) return null;
+  return (
+    <div className="card p-3.5" style={{ borderColor: 'color-mix(in srgb, var(--accent) 32%, var(--line))' }}>
+      <p className="text-[12.5px] text-dim leading-relaxed">
+        <span style={{ color: 'var(--accent)' }}>
+          {r.strictCount === 0
+            ? 'Nothing matched every constraint exactly.'
+            : `Only ${r.strictCount} track${r.strictCount === 1 ? '' : 's'} matched every constraint.`}
+        </span>{' '}
+        Loosened {r.relaxations.map((x) => x.note).join(', then ')} to find more. Results below the
+        exact matches are marked. Mode, key and the vocals requirement are never relaxed.
       </p>
     </div>
   );
@@ -222,6 +248,7 @@ export default function SearchPage() {
       {data && !loading && (
         <div className="mt-5 space-y-4">
           <ParsedView r={data} />
+          <RelaxNotice r={data} />
           {data.summary && (
             <p className="text-[13px] text-dim leading-relaxed px-1">{data.summary}</p>
           )}

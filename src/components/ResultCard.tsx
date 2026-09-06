@@ -119,6 +119,12 @@ export function ResultCard({
             )}
             {row.duration_sec ? <span className="chip" style={{ color: 'var(--text-mute)' }}>{fmtTime(row.duration_sec)}</span> : null}
             {row.license_short && <span className="chip" style={{ color: 'var(--text-mute)' }}>{row.license_short}</span>}
+            {row.relaxed && (
+              <span className="chip" title="only matches after a constraint was loosened"
+                    style={{ color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--line-2))' }}>
+                relaxed match
+              </span>
+            )}
             <button onClick={() => setOpen((o) => !o)}
                     className="chip hover:border-accent transition-colors"
                     style={{ color: open ? 'var(--accent)' : 'var(--text-mute)' }}>
