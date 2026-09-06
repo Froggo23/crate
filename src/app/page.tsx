@@ -45,7 +45,6 @@ function ParsedView({ r }: { r: SearchResponse }) {
   const br = range(p.brightness_min, p.brightness_max); if (br) hard.push(['brightness', br]);
   const yr = range(p.year_min, p.year_max);           if (yr) hard.push(['year', yr]);
   const du = range(p.duration_min, p.duration_max, 's'); if (du) hard.push(['duration', du]);
-  if (p.tags?.length) hard.push(['tags', p.tags.join(', ')]);
   if (p.keywords) hard.push(['text', p.keywords]);
 
   return (
@@ -72,6 +71,21 @@ function ParsedView({ r }: { r: SearchResponse }) {
           </div>
         ) : <p className="text-[12px] text-mute">none — this query is entirely semantic.</p>}
       </div>
+
+      {p.tags?.length ? (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-mute mb-1.5">
+            style preference — boosts ranking, never excludes anything
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {p.tags.map((t) => (
+              <span key={t} className="chip" style={{ color: 'var(--violet)', borderColor: 'color-mix(in srgb, var(--violet) 40%, var(--line-2))' }}>
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div>
         <p className="text-[10px] uppercase tracking-wider text-mute mb-1">

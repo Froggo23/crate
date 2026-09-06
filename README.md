@@ -84,8 +84,9 @@ The synthetic benchmark is a *gate*, not the result. The real evaluation needs h
 
 ```
 query ──▶ [1] LLM parser (strict JSON schema, provider-agnostic)
-             ├─ hard: bpm · key · mode · vocals · year · duration · energy
-             │        · brightness · tags · emergence ceiling
+             ├─ hard:   bpm · key · mode · vocals · year · duration
+             │          · energy · brightness · emergence ceiling
+             ├─ boost:  style tags — reorder only, never exclude
              └─ semantic: "hazy, cavernous, warm tape saturation"
                           └──▶ embedded ──▶ vector(1536)
                     │
@@ -111,6 +112,44 @@ which predicate emptied it.** `crate_constraint_funnel()` reports per-constraint
 counts, so the UI says *"31 tracks matched your tempo range, 7 of those were Phrygian, none of those 7
 were instrumental — relax that one first"*. A system that blends everything into one similarity score
 has no such boundary to point at.
+
+### Genre is a preference, not a predicate
+
+Style tags **boost ranking and never exclude**. This was a bug before it was a design decision. Measured
+across 20 arbitrary queries, the parser emitted a tag constraint on 15 of them, and tags were the sole
+cause of every empty result — because this corpus's tag vocabulary is self-declared and thin
+(`electronic` 514, `ambient` 447, `experimental` 422), so intersecting against "lo-fi hip hop" or
+"cinematic orchestral" empties the set even though the corpus plainly contains that music.
+
+It is also what the plan actually specifies: the hard constraints are listed as *"bpm range, key, mode,
+instrumental, year, emergence ceiling"*. Tags were never among them. Genre belongs on the semantic side,
+where it can rank without excluding.
+
+### Progressive relaxation
+
+One over-tight constraint should degrade an answer, not erase it. When fewer than five tracks survive,
+constraints are relaxed in order of **how likely they were inferred rather than stated** — a
+mode-confidence floor is always the parser's own invention; a named key is the user's:
+
+```
+mode-confidence floor → energy/brightness → tempo widened 25% → duration/year
+→ artist-title text → obscurity ceiling → tempo dropped → key
+```
+
+**Mode, key-as-mode and the vocals requirement are never relaxed.** The plan is explicit that a vocal
+track must never appear in a "no vocals" query regardless of how well it matches, and that holds here:
+exact matches keep their position, relaxed ones are appended and visibly marked, and every relaxation
+step is named in the UI. Silently widening a filter would be worse than returning nothing.
+
+Measured before and after, on the same 20 arbitrary queries:
+
+| | before | after |
+|---|---|---|
+| Empty results | 4/20 (20%) | **0/20** |
+| Fewer than 5 results | 9/20 | **0/20** |
+| Filled the candidate pool with no relaxation | — | **19/20** |
+| Relevance (≥3 tag matches in top 10) | — | **5/6** |
+| Hard-constraint violations | — | **0** |
 
 ### Obscurity as an objective, not a penalty
 
