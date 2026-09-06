@@ -13,7 +13,8 @@
     "test:dsp": "tsx scripts/test-dsp.ts",
     "test:parser": "tsx scripts/test-parser.ts",
     "bench": "tsx scripts/test-dsp.ts --json",
-    "db:push": "supabase db push"
+    "db:push": "supabase db push",
+    "test:retrieval": "tsx scripts/test-retrieval.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
