@@ -1,0 +1,7 @@
+# Bulk dataset downloads and extracted dumps — never deployed.
+# These are build-time inputs for scripts/ingest-acousticbrainz.ts, not runtime
+# assets; the app reads features from Postgres, never from disk.
+.data/
+.logs/
+supabase/
+scripts/

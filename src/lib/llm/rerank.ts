@@ -50,6 +50,10 @@ export async function rerank(
       jsonSchema: RERANK_JSON_SCHEMA,
       validator: RerankSchema,
       maxTokens: 8000,
+      // Re-ranking is the last stage and the most optional one: on timeout the
+      // vector ordering is already a good answer, so fail fast and serve it.
+      timeoutMs: 25_000,
+      retries: 1,
     });
     return { result: r.data, provider: r.provider, model: r.model, ms: r.ms };
   } catch (e) {

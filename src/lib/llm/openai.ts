@@ -24,7 +24,8 @@ export async function openaiJson<T>(
 
   const res = await fetchWithRetry('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    timeoutMs: 90_000,
+    timeoutMs: req.timeoutMs ?? 90_000,
+    retries: req.retries,
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,

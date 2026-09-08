@@ -13,7 +13,13 @@ interface EmbeddingResponse {
   usage?: { total_tokens: number };
 }
 
-export async function embedTexts(texts: string[]): Promise<number[][]> {
+export interface EmbedOptions {
+  /** per-request timeout. Interactive paths must fit inside the function budget. */
+  timeoutMs?: number;
+  retries?: number;
+}
+
+export async function embedTexts(texts: string[], opt: EmbedOptions = {}): Promise<number[][]> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('OPENAI_API_KEY is not set');
   if (!texts.length) return [];
@@ -25,7 +31,8 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
     const chunk = texts.slice(i, i + BATCH).map((t) => (t || ' ').slice(0, 8000));
     const res = await fetchWithRetry('https://api.openai.com/v1/embeddings', {
       method: 'POST',
-      timeoutMs: 60_000,
+      timeoutMs: opt.timeoutMs ?? 60_000,
+      retries: opt.retries,
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: embedModel(), input: chunk }),
     });
@@ -40,6 +47,6 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   return out;
 }
 
-export async function embedOne(text: string): Promise<number[]> {
-  return (await embedTexts([text]))[0];
+export async function embedOne(text: string, opt: EmbedOptions = {}): Promise<number[]> {
+  return (await embedTexts([text], opt))[0];
 }

@@ -19,6 +19,17 @@ export interface JsonRequest<T> {
   jsonSchema: object;
   validator: z.ZodType<T>;
   maxTokens?: number;
+  /**
+   * Wall-clock budget for this call.
+   *
+   * Interactive routes run inside a serverless function with a hard duration
+   * limit, so an LLM call MUST fail fast enough to leave room for the fallback.
+   * The default 90s timeout with four exponential-backoff retries could exceed
+   * the 60s function budget on its own, which produced FUNCTION_INVOCATION_
+   * TIMEOUT (504) under load instead of a degraded-but-served result.
+   */
+  timeoutMs?: number;
+  retries?: number;
 }
 
 export interface JsonResult<T> {

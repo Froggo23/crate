@@ -118,6 +118,11 @@ export async function parseQuery(text: string): Promise<ParseOutcome> {
       jsonSchema: PARSED_QUERY_JSON_SCHEMA,
       validator: ParsedQuerySchema,
       maxTokens: 2000,
+      // Must leave room inside the 60s function budget for embedding, SQL and
+      // the re-ranker. If the parser is slow, the rule-based fallback is a far
+      // better outcome than a 504.
+      timeoutMs: 15_000,
+      retries: 1,
     });
     const q = sanitise(r.data);
     // An empty semantic string means no vector ordering at all, which silently

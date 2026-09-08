@@ -24,6 +24,7 @@ export async function anthropicJson<T>(
 ): Promise<{ raw: unknown; model: string }> {
   const model = anthropicModel();
   const response = await getClient().messages.create({
+    timeout: req.timeoutMs,
     model,
     max_tokens: req.maxTokens ?? 8000,
     system: req.system,

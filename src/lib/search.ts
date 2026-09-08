@@ -194,7 +194,7 @@ export async function runSearch(
   const semantic = (q.semantic || '').trim();
   if (semantic) {
     try {
-      qVec = toVector(await embedOne(semantic));
+      qVec = toVector(await embedOne(semantic, { timeoutMs: 12_000, retries: 1 }));
     } catch (e) {
       console.error('[search] embedding failed, falling back to filter-only:', (e as Error).message);
     }
