@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 
+interface SourceRow {
+  hpcp_source: string; n: number; decided_pct: number | null;
+  avg_conf: number | null; playable: number;
+}
+
 interface Stats {
+  sources?: SourceRow[];
   stats: Record<string, string | number>;
   modes: { mode: string; n: number; avg_conf: number | null }[];
   bpm: { bucket: number; n: number }[];
@@ -50,6 +56,44 @@ export default function CorpusPage() {
         <Stat label="relevance events" value={String(s.feedback_total)} sub="the accumulating dataset" />
         <Stat label="mean tempo" value={`${s.mean_bpm ?? '—'}`} sub="BPM" />
       </div>
+
+      {d.sources && d.sources.length > 1 && (
+        <div className="card p-4">
+          <h2 className="text-[13px] font-medium mb-1">Two tiers, different amounts of information</h2>
+          <p className="text-[11.5px] text-mute mb-3 leading-relaxed">
+            These are never pooled in an evaluation. <code className="text-dim">audio</code> rows were
+            decoded here and carry per-frame HPCP with bass-register, downbeat and phrase-final
+            weighting. <code className="text-dim">acousticbrainz</code> rows reuse Essentia&apos;s
+            published <em>aggregate</em> profile — about half the tonal information, and no structural
+            prior is reconstructible from it — but they bring real MusicBrainz identities and a trained
+            vocal classifier.
+          </p>
+          <div className="scroll-x">
+            <table className="w-full text-[12px] min-w-[440px]">
+              <thead>
+                <tr className="text-mute text-[10px] uppercase tracking-wider border-b border-line">
+                  <th className="text-left font-normal py-1.5">source</th>
+                  <th className="text-right font-normal">tracks</th>
+                  <th className="text-right font-normal">playable</th>
+                  <th className="text-right font-normal">mode assigned</th>
+                  <th className="text-right font-normal">mean conf.</th>
+                </tr>
+              </thead>
+              <tbody className="num">
+                {d.sources.map((s) => (
+                  <tr key={s.hpcp_source} className="border-b border-line/50 last:border-0">
+                    <td className="py-1.5 text-dim">{s.hpcp_source}</td>
+                    <td className="text-right text-ink">{s.n.toLocaleString()}</td>
+                    <td className="text-right text-mute">{s.playable.toLocaleString()}</td>
+                    <td className="text-right text-accent">{s.decided_pct ?? '—'}%</td>
+                    <td className="text-right text-mute">{s.avg_conf ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="card p-4">
