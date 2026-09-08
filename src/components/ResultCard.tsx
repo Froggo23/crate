@@ -29,6 +29,10 @@ export function ResultCard({
   const [open, setOpen] = useState(false);
   const [vote, setVote] = useState<'up' | 'down' | null>(null);
   const isCurrent = player.trackId === row.track_id;
+  // AcousticBrainz-sourced rows carry no streamable audio -- the point of that
+  // corpus is that its features were computed once and published, so nothing is
+  // rehosted. Those rows link out to MusicBrainz instead of offering a player.
+  const playable = Boolean(row.audio_url);
 
   async function feedback(event: 'up' | 'down') {
     const next = vote === event ? null : event;
@@ -55,22 +59,37 @@ export function ResultCard({
   return (
     <article className="card p-3.5 fade-in hover:border-line-2 transition-colors">
       <div className="flex gap-3">
-        <button
-          onClick={() => player.toggle(row.track_id, row.audio_url)}
-          aria-label={isCurrent && player.playing ? `Pause ${row.title}` : `Play ${row.title}`}
-          className="shrink-0 w-11 h-11 rounded-lg grid place-items-center border transition-colors"
-          style={{
-            borderColor: isCurrent ? 'var(--accent)' : 'var(--line-2)',
-            background: isCurrent ? 'color-mix(in srgb, var(--accent) 16%, transparent)' : 'var(--surface-2)',
-            color: isCurrent ? 'var(--accent)' : 'var(--text-dim)',
-          }}
-        >
-          {isCurrent && player.loading
-            ? <span className="pulse text-[10px] num">•••</span>
-            : isCurrent && player.playing
-              ? <svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="3.5" height="10" rx="1" /><rect x="7.5" y="1" width="3.5" height="10" rx="1" /></svg>
-              : <svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1.2v9.6a.6.6 0 0 0 .92.5l7.3-4.8a.6.6 0 0 0 0-1L2.92.7A.6.6 0 0 0 2 1.2Z" /></svg>}
-        </button>
+        {playable ? (
+          <button
+            onClick={() => player.toggle(row.track_id, row.audio_url!)}
+            aria-label={isCurrent && player.playing ? `Pause ${row.title}` : `Play ${row.title}`}
+            className="shrink-0 w-11 h-11 rounded-lg grid place-items-center border transition-colors"
+            style={{
+              borderColor: isCurrent ? 'var(--accent)' : 'var(--line-2)',
+              background: isCurrent ? 'color-mix(in srgb, var(--accent) 16%, transparent)' : 'var(--surface-2)',
+              color: isCurrent ? 'var(--accent)' : 'var(--text-dim)',
+            }}
+          >
+            {isCurrent && player.loading
+              ? <span className="pulse text-[10px] num">•••</span>
+              : isCurrent && player.playing
+                ? <svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor"><rect x="1" y="1" width="3.5" height="10" rx="1" /><rect x="7.5" y="1" width="3.5" height="10" rx="1" /></svg>
+                : <svg width="13" height="13" viewBox="0 0 12 12" fill="currentColor"><path d="M2 1.2v9.6a.6.6 0 0 0 .92.5l7.3-4.8a.6.6 0 0 0 0-1L2.92.7A.6.6 0 0 0 2 1.2Z" /></svg>}
+          </button>
+        ) : (
+          <a
+            href={row.page_url ?? `https://musicbrainz.org/search?query=${encodeURIComponent(`${row.artist_name} ${row.title}`)}&type=recording`}
+            target="_blank" rel="noreferrer noopener"
+            aria-label={`Look up ${row.title} on MusicBrainz`}
+            title="No hosted audio — open on MusicBrainz"
+            className="shrink-0 w-11 h-11 rounded-lg grid place-items-center border border-line-2 bg-surface-2 text-mute hover:text-accent hover:border-accent transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M6.5 3H3.5A.5.5 0 0 0 3 3.5v9a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-3" />
+              <path d="M9.5 2.5H13.5V6.5M13 3l-6 6" strokeLinecap="round" />
+            </svg>
+          </a>
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
@@ -119,6 +138,12 @@ export function ResultCard({
             )}
             {row.duration_sec ? <span className="chip" style={{ color: 'var(--text-mute)' }}>{fmtTime(row.duration_sec)}</span> : null}
             {row.license_short && <span className="chip" style={{ color: 'var(--text-mute)' }}>{row.license_short}</span>}
+            {!playable && (
+              <span className="chip" title="features from the published AcousticBrainz dump; audio is not hosted here"
+                    style={{ color: 'var(--text-mute)' }}>
+                link only
+              </span>
+            )}
             {row.relaxed && (
               <span className="chip" title="only matches after a constraint was loosened"
                     style={{ color: 'var(--accent)', borderColor: 'color-mix(in srgb, var(--accent) 45%, var(--line-2))' }}>
@@ -139,7 +164,7 @@ export function ResultCard({
             </p>
           )}
 
-          {isCurrent && (
+          {playable && isCurrent && (
             <div className="mt-2 flex items-center gap-2">
               <span className="num text-[10px] text-mute w-8">{fmtTime(player.currentTime)}</span>
               <input

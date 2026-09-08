@@ -23,7 +23,7 @@ export interface SearchRow {
   album: string | null;
   year: number | null;
   duration_sec: number | null;
-  audio_url: string;
+  audio_url: string | null;
   page_url: string | null;
   license_short: string | null;
   license_url: string | null;

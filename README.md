@@ -233,7 +233,53 @@ identifier stub (`hc040`, `hc041` → `hc`). It is a real signal, but it is a pr
 
 ---
 
-## The corpus
+## The corpus — two tiers, deliberately
+
+CRATE indexes from two sources with **very different amounts of information**, and every row records
+which one it came from (`audio_features.hpcp_source`). They are never pooled in an evaluation.
+
+### Tier 1 — AcousticBrainz (breadth, no audio transferred)
+
+[AcousticBrainz](https://acousticbrainz.org/download) ran Essentia across user-submitted libraries and
+published the results before shutting down in 2022: 29.4M submissions, ~7M unique recordings. Crucially
+it publishes `tonal.hpcp` — the harmonic pitch class profile this project's classifier consumes.
+
+**Downloading audio to compute features is only correct when the features do not already exist.** For
+these recordings they do, so CRATE reuses them: one bounded download, no audio transfer, and no
+rehosting. What that buys:
+
+- **MusicBrainz IDs on every row**, so artist identity and ListenBrainz listen counts resolve exactly
+  instead of by fuzzy name match
+- **Essentia's own key output as the baseline** — the real extractor named in §6 of the plan, not a
+  reimplementation of it
+- **`voice_instrumental`, a trained classifier**, replacing the 3–8 Hz modulation heuristic that was
+  the weakest number in the system
+- **Four independent genre taxonomies**, which §4.2 explicitly asks for
+
+**What it costs, measured rather than assumed.** AcousticBrainz stores *aggregate* HPCP (mean/median/var
+over the whole track), never per-frame. Re-running key detection on the stored mean reproduces
+Essentia's *own* answer only **52%** of the time (`hpcp.mean` + Temperley; median and max are worse). So
+roughly half the tonal information is gone before the classifier starts, and the bass-register,
+downbeat and phrase-final weighting cannot be reconstructed from an aggregate at all.
+
+**A negative result worth recording.** The obvious substitute for the lost structural prior was
+`chords_histogram` — which chord roots the harmony dwells on. It was measured on 1,908 records and it
+makes things **worse**: major/minor family agreement with Essentia was 70.1% using no chord evidence,
+55.0% using it for tonic-chord quality, and 53.1% using it as the tonic prior. The most-played chord is
+too often the dominant or subdominant. The histogram is still stored; it is not fed to the classifier.
+
+Because the aggregate profile is flatter than a per-frame one (p50 tonal clarity 0.027 vs 0.043), this
+tier gets its own calibrated clarity window — see `npm run calibrate:ab`, which reproduces the sweep.
+
+Bin alignment for the 36-bin profile is undocumented upstream, so it was **measured**: folding at each
+of 12 offsets and scoring how often Krumhansl–Schmuckler reproduces Essentia's reported key gives a
+sharp winner at offset 3 (**bin 0 = pitch class A**), agreeing with Essentia's 440 Hz reference. Offset
+10 scores nearly as high because it is a perfect fifth away and the dominant is frequently the loudest
+chroma bin — the exact trap an argmax-based calibration falls into.
+
+These rows carry **no streamable audio** and link out to MusicBrainz. Nothing is rehosted.
+
+### Tier 2 — Internet Archive netlabels (depth, playable)
 
 Creative Commons releases from the Internet Archive's [`netlabels`](https://archive.org/details/netlabels)
 collection — 77,000 audio items of independent, mostly electronic music.
@@ -244,6 +290,9 @@ builds incrementally and resumes after a failure. More importantly it is the **s
 the independent, low-listener-count music the obscurity ranking is built to surface — and the licences
 permit hosting a playable demo, which the plan is explicit about: *a recommender you cannot play is not a
 demo.*
+
+These are the **only** tracks with full per-frame structural analysis and playable audio, which makes
+them the control condition for measuring what that analysis is worth.
 
 Snapshot at time of writing (the `/corpus` page is live):
 

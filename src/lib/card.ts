@@ -116,3 +116,93 @@ export function buildCard(inp: CardInput): string {
     `loudness ${d.loudnessDb.toFixed(1)} dB, onset rate ${a.tempo.onsetRate.toFixed(1)}/s.`,
   ].filter(Boolean).join(' ');
 }
+
+
+// ---------------------------------------------------------------------------
+// AcousticBrainz cards
+// ---------------------------------------------------------------------------
+
+/**
+ * Card builder for AcousticBrainz-sourced tracks.
+ *
+ * Deliberately NOT reusing buildCard(). That function describes spectral
+ * flatness, low-end ratio, crest factor and percussive ratio -- none of which
+ * AcousticBrainz publishes. Passing defaults for them would emit confident
+ * adjectives ("clean and tonal", "heavy low end") that describe nothing that was
+ * measured, and those adjectives go straight into the embedding that retrieval
+ * ranks on. A card must only claim what its source actually contains.
+ *
+ * In exchange this source has things the audio pipeline does not: four genre
+ * taxonomies, seven mood classifiers, and a trained voice/instrumental model.
+ */
+export interface AbCardInput {
+  title: string;
+  artist: string;
+  album?: string | null;
+  year?: number | null;
+  bpm: number | null;
+  keyName: string;
+  modeName: string;
+  tonalClarity: number;
+  genres: string[];
+  moods: string[];
+  instrumental: number | null;
+  brightness: number | null;
+  energy: number | null;
+  danceability: number | null;
+  dissonance: number | null;
+  dynamicComplexity: number | null;
+  spectralCentroid: number | null;
+  tonalAtonal: number | null;
+}
+
+export function buildAbCard(i: AbCardInput): string {
+  const band = <T,>(x: number | null, cuts: number[], vals: T[], fallback: T): T => {
+    if (x == null) return fallback;
+    for (let k = 0; k < cuts.length; k++) if (x < cuts[k]) return vals[k];
+    return vals[vals.length - 1];
+  };
+
+  const brightness = band(i.brightness, [0.25, 0.42, 0.58, 0.75],
+    ['dark and muffled, almost no top end', 'warm and rounded, gentle highs',
+     'balanced across the spectrum', 'bright and open', 'brilliant, airy, hissy top end'],
+    'unremarkable spectral balance');
+
+  const energy = band(i.energy, [0.2, 0.38, 0.55, 0.72],
+    ['still, ambient, almost motionless', 'calm and restrained', 'moderate energy',
+     'energetic and propulsive', 'intense, hard-hitting, maximal'], 'moderate energy');
+
+  const dance = band(i.danceability, [0.6, 1.2, 1.8],
+    ['not danceable, no steady groove', 'a loose sense of pulse',
+     'a solid danceable groove', 'strongly danceable, locked rhythm'], '');
+
+  const rough = band(i.dissonance, [0.42, 0.46, 0.49],
+    ['consonant and smooth', 'mostly consonant', 'somewhat dissonant',
+     'harsh and dissonant'], '');
+
+  const dyn = band(i.dynamicComplexity, [1.5, 3, 6],
+    ['heavily compressed and flat', 'fairly consistent in level',
+     'moderate dynamic movement', 'wide, breathing dynamics'], '');
+
+  const voice = i.instrumental == null
+    ? 'vocal presence unknown'
+    : i.instrumental >= 0.6 ? 'instrumental, no discernible vocal'
+    : i.instrumental <= 0.4 ? 'has vocals'
+    : 'vocal presence uncertain';
+
+  const tonal = i.modeName === 'unclear'
+    ? `Tonally ambiguous — no mode could be assigned with confidence (${i.tonalClarity.toFixed(2)} tonal clarity).`
+    : `In ${i.keyName}: ${MODE_COLOUR[i.modeName] ?? ''}.`;
+
+  return [
+    `"${i.title}" by ${i.artist}${i.year ? ` (${i.year})` : ''}${i.album ? `, from ${i.album}` : ''}.`,
+    i.genres.length ? `Classified as: ${i.genres.join(', ')}.` : '',
+    i.moods.length ? `Mood: ${i.moods.join(', ')}.` : '',
+    i.bpm ? `${tempoWord(i.bpm)} at ${i.bpm.toFixed(0)} BPM.` : '',
+    tonal,
+    `Sound: ${[brightness, energy, dance, rough, dyn].filter(Boolean).join('; ')}.`,
+    `${voice}.`,
+    i.spectralCentroid ? `Spectral centroid ${i.spectralCentroid.toFixed(0)} Hz.` : '',
+    i.tonalAtonal != null && i.tonalAtonal < 0.4 ? 'Classified as atonal.' : '',
+  ].filter(Boolean).join(' ');
+}

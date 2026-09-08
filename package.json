@@ -14,7 +14,9 @@
     "test:parser": "tsx scripts/test-parser.ts",
     "bench": "tsx scripts/test-dsp.ts --json",
     "db:push": "supabase db push",
-    "test:retrieval": "tsx scripts/test-retrieval.ts"
+    "test:retrieval": "tsx scripts/test-retrieval.ts",
+    "ingest:ab": "tsx scripts/ingest-acousticbrainz.ts",
+    "calibrate:ab": "tsx scripts/calibrate-acousticbrainz.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

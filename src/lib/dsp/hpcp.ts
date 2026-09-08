@@ -162,3 +162,30 @@ export function toUnitMax(v: Float64Array): number[] {
   for (let i = 0; i < v.length; i++) if (v[i] > m) m = v[i];
   return Array.from(v, (x) => (m > 0 ? Number((x / m).toFixed(5)) : 0));
 }
+
+/**
+ * Fold a 36-bin HPCP down to 12 semitones.
+ *
+ * AcousticBrainz publishes Essentia's 36-bin profile (3 bins per semitone).
+ * The bin-0 alignment is NOT documented anywhere I could find, so it was
+ * measured rather than assumed: folding at each of the 12 possible offsets and
+ * scoring how often Krumhansl-Schmuckler on the result reproduces Essentia's
+ * own reported key gives a sharp winner at offset 3, i.e. BIN 0 = PITCH CLASS A.
+ * That agrees with Essentia's default 440 Hz reference frequency, so theory and
+ * measurement land in the same place.
+ *
+ * Offset 10 also scores highly (39% vs 44%) because it is a perfect fifth away
+ * and the dominant is frequently the loudest chroma bin -- which is exactly the
+ * trap an argmax-based calibration would have fallen into.
+ */
+export const HPCP36_BIN0_PITCH_CLASS = 9; // A
+export const HPCP36_FOLD_OFFSET = 3;
+
+export function foldHpcp36(h36: ArrayLike<number>): Float64Array {
+  const out = new Float64Array(12);
+  if (h36.length !== 36) throw new Error(`expected 36 bins, got ${h36.length}`);
+  for (let i = 0; i < 36; i++) {
+    out[(Math.floor(i / 3) - HPCP36_FOLD_OFFSET + 12) % 12] += h36[i];
+  }
+  return out;
+}

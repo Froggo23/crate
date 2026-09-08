@@ -47,3 +47,6 @@ next-env.d.ts
 
 # keep the template, never the real values
 !.env.example
+
+# bulk dataset downloads — never committed
+.data/

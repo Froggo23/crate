@@ -112,6 +112,8 @@ export const PARAMS = {
   CLARITY_CEIL: 0.09,
   /** Locrian is vanishingly rare as an actual tonal centre; damp it */
   LOCRIAN_PENALTY: 0.10,
+  /** weight of tonic-chord quality evidence when a chord histogram is available */
+  CHORD_QUALITY_WEIGHT: 0.16,
   /** contributions to the structural tonic prior */
   PRIOR_BASS: 0.42,
   PRIOR_DOWNBEAT: 0.24,
@@ -236,10 +238,37 @@ export function tonalClarity(hpcp: ArrayLike<number>): number {
 }
 
 export interface TonicPriorInput {
-  hpcp: Float64Array;          // global harmonic pitch class profile
-  hpcpBass: Float64Array;      // bass register only (< ~250 Hz)
-  hpcpDownbeat: Float64Array;  // downbeat-weighted
-  hpcpPhraseFinal: Float64Array; // phrase-final positions
+  /** global harmonic pitch class profile — the only required input */
+  hpcp: Float64Array;
+
+  // ---- structural profiles, available only from per-frame audio analysis ----
+  hpcpBass?: Float64Array;          // bass register only (< ~250 Hz)
+  hpcpDownbeat?: Float64Array;      // downbeat-weighted
+  hpcpPhraseFinal?: Float64Array;   // phrase-final positions
+
+  /**
+   * Use the chord histogram as the TONIC PRIOR.
+   *
+   * Off by default because it was measured to make things worse, not better:
+   * on 1,908 AcousticBrainz records, major/minor family agreement with Essentia
+   * fell from 70% to 53% when the chord-root histogram drove the tonic prior.
+   * The most-played chord is frequently the dominant or subdominant rather than
+   * the tonic, so it pulls the answer off the tonal centre. Kept behind a flag
+   * because the measurement is worth being able to reproduce.
+   */
+  useChordPrior?: boolean;
+
+  /**
+   * 24-bin chord histogram: indices 0-11 are MAJOR chords rooted at C..B,
+   * 12-23 are MINOR chords rooted at C..B.
+   *
+   * This is the substitute tonic prior for corpora that publish aggregate
+   * features rather than audio (AcousticBrainz). It cannot tell us which pitch
+   * class sits in the bass or lands on a downbeat, but it does say which chord
+   * roots the harmony actually dwells on -- which is a HARMONIC rather than
+   * REGISTRAL route to the same question, and arguably a more direct one.
+   */
+  chordsHistogram?: Float64Array;
 }
 
 /**
@@ -258,24 +287,69 @@ export function tonicPrior(inp: TonicPriorInput): Float64Array {
     for (let i = 0; i < 12; i++) out[i] = v[i] / s;
     return out;
   };
-  const b = norm(inp.hpcpBass);
-  const d = norm(inp.hpcpDownbeat);
-  const p = norm(inp.hpcpPhraseFinal);
-  const g = norm(inp.hpcp);
+
   const out = new Float64Array(12);
-  for (let i = 0; i < 12; i++) {
-    out[i] =
-      PARAMS.PRIOR_BASS * b[i] +
-      PARAMS.PRIOR_DOWNBEAT * d[i] +
-      PARAMS.PRIOR_PHRASE_FINAL * p[i] +
-      PARAMS.PRIOR_GLOBAL * g[i];
+  const hasStructural = Boolean(inp.hpcpBass && inp.hpcpDownbeat && inp.hpcpPhraseFinal);
+
+  if (hasStructural) {
+    const b = norm(inp.hpcpBass!);
+    const d = norm(inp.hpcpDownbeat!);
+    const p = norm(inp.hpcpPhraseFinal!);
+    const g = norm(inp.hpcp);
+    for (let i = 0; i < 12; i++) {
+      out[i] =
+        PARAMS.PRIOR_BASS * b[i] +
+        PARAMS.PRIOR_DOWNBEAT * d[i] +
+        PARAMS.PRIOR_PHRASE_FINAL * p[i] +
+        PARAMS.PRIOR_GLOBAL * g[i];
+    }
+  } else if (inp.useChordPrior && inp.chordsHistogram && inp.chordsHistogram.length === 24) {
+    // Total time spent on a chord ROOTED at each pitch class, major or minor.
+    // The tonal centre is usually the chord root the harmony returns to most.
+    const roots = new Float64Array(12);
+    for (let i = 0; i < 12; i++) {
+      roots[i] = inp.chordsHistogram[i] + inp.chordsHistogram[i + 12];
+    }
+    const r = norm(roots);
+    const g = norm(inp.hpcp);
+    // Chord roots carry most of the weight; the raw profile only breaks ties,
+    // because on aggregate data it is the weaker of the two signals.
+    for (let i = 0; i < 12; i++) out[i] = 0.75 * r[i] + 0.25 * g[i];
+  } else {
+    // No structural evidence at all. Fall back to the raw profile and accept
+    // that the tonic prior contributes nothing beyond what correlation sees.
+    out.set(norm(inp.hpcp));
   }
-  // rescale to [0,1] so the weight constant has a stable meaning
+
   let mx = 0;
   for (let i = 0; i < 12; i++) if (out[i] > mx) mx = out[i];
   if (mx > 0) for (let i = 0; i < 12; i++) out[i] /= mx;
   return out;
 }
+
+/**
+ * Does the harmony spell the tonic as a MAJOR or MINOR chord?
+ *
+ * Returns +1 for unambiguously major, -1 for unambiguously minor, 0 when there
+ * is no chord evidence. Modes are then rewarded for agreeing with it: if the
+ * tonic chord is minor, a mode with a minor third fits the harmony and one with
+ * a major third does not. This recovers part of what the lost bass-register
+ * prior was providing.
+ */
+export function tonicChordQuality(
+  chords: Float64Array | undefined,
+  tonic: number,
+): number {
+  if (!chords || chords.length !== 24) return 0;
+  const maj = chords[tonic];
+  const min = chords[tonic + 12];
+  if (maj + min <= 0) return 0;
+  return clamp((maj - min) / (maj + min), -1, 1);
+}
+
+const HAS_MAJOR_THIRD = new Set<ModeName>([
+  'ionian', 'lydian', 'mixolydian', 'phrygian_dominant', 'whole_tone',
+]);
 
 export interface Hypothesis {
   tonic: number;
@@ -317,7 +391,11 @@ export function keyName(tonic: number, mode: ModeOrUnclear): string {
 /**
  * Joint tonic + mode estimation over all 12 x 10 hypotheses.
  */
-export function classifyMode(inp: TonicPriorInput): ModeResult {
+export function classifyMode(
+  inp: TonicPriorInput,
+  overrides?: Partial<typeof PARAMS>,
+): ModeResult {
+  const P = { ...PARAMS, ...overrides };
   const prior = tonicPrior(inp);
   // unit-max normalise so that presence/reliability thresholds have a fixed
   // meaning regardless of excerpt length or level
@@ -330,12 +408,16 @@ export function classifyMode(inp: TonicPriorInput): ModeResult {
       const correlation = pearson(rotated, TEMPLATE_VECTORS[tpl.name]);
       const diagnostic = characteristicEvidence(rotated, tpl);
       const coverage = scaleEvidence(rotated, tpl);
+      // agreement between the mode's third and the tonic chord's quality
+      const quality = tonicChordQuality(inp.chordsHistogram, tonic)
+        * (HAS_MAJOR_THIRD.has(tpl.name) ? 1 : -1);
       let score =
         correlation +
-        PARAMS.TONIC_PRIOR_WEIGHT * prior[tonic] +
-        PARAMS.DIAGNOSTIC_WEIGHT * diagnostic +
-        PARAMS.COVERAGE_WEIGHT * coverage;
-      if (tpl.name === 'locrian') score -= PARAMS.LOCRIAN_PENALTY;
+        P.TONIC_PRIOR_WEIGHT * prior[tonic] +
+        P.DIAGNOSTIC_WEIGHT * diagnostic +
+        P.COVERAGE_WEIGHT * coverage +
+        P.CHORD_QUALITY_WEIGHT * quality;
+      if (tpl.name === 'locrian') score -= P.LOCRIAN_PENALTY;
       hyps.push({
         tonic,
         mode: tpl.name,
@@ -361,7 +443,7 @@ export function classifyMode(inp: TonicPriorInput): ModeResult {
   const tonicMargin = bestOtherTonic ? best.score - bestOtherTonic.score : best.score;
 
   const fitQuality = clamp(
-    (best.correlation - PARAMS.FIT_FLOOR) / (PARAMS.FIT_CEIL - PARAMS.FIT_FLOOR),
+    (best.correlation - P.FIT_FLOOR) / (P.FIT_CEIL - P.FIT_FLOOR),
     0, 1,
   );
   // Three independent things must all hold before a label is worth reporting:
@@ -370,17 +452,17 @@ export function classifyMode(inp: TonicPriorInput): ModeResult {
   // A geometric mean means any one of them failing collapses the confidence.
   const clarity = tonalClarity(h);
   const clarityQ = clamp(
-    (clarity - PARAMS.CLARITY_FLOOR) / (PARAMS.CLARITY_CEIL - PARAMS.CLARITY_FLOOR),
+    (clarity - P.CLARITY_FLOOR) / (P.CLARITY_CEIL - P.CLARITY_FLOOR),
     0, 1,
   );
   const modeConfidence = Math.cbrt(
-    fitQuality * clamp(modeMargin / PARAMS.MARGIN_FULL, 0, 1) * clarityQ,
+    fitQuality * clamp(modeMargin / P.MARGIN_FULL, 0, 1) * clarityQ,
   );
   const tonicConfidence = Math.cbrt(
-    fitQuality * clamp(tonicMargin / PARAMS.MARGIN_FULL, 0, 1) * clarityQ,
+    fitQuality * clamp(tonicMargin / P.MARGIN_FULL, 0, 1) * clarityQ,
   );
 
-  const abstained = modeConfidence < PARAMS.ABSTAIN;
+  const abstained = modeConfidence < P.ABSTAIN;
   const mode: ModeOrUnclear = abstained ? 'unclear' : best.mode;
 
   const perMode: Record<string, number> = {};
